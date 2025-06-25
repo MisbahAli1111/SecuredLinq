@@ -14,6 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.org.securedlinq",
       "infoPlist": {
         "NSCameraUsageDescription": "SecureCam needs access to your camera to take photos and record videos.",
         "NSMicrophoneUsageDescription": "SecureCam needs access to your microphone to record videos with audio.",
@@ -38,7 +39,7 @@
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.ACCESS_MEDIA_LOCATION"
       ],
-      "package": "com.syedmuhammadhammad.SecureCam"
+      "package": "com.org.securedlinq"
     },
     "web": {
       "favicon": "./assets/favicon.png"
