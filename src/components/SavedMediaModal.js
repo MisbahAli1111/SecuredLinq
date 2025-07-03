@@ -12,20 +12,20 @@ import {
 import Modal from 'react-native-modal';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
+import { S3Service } from '../services';
 
 const { width, height } = Dimensions.get('window');
 const ITEM_SIZE = (width - 60) / 2;
 
-const SavedMediaModal = ({ isVisible, onClose }) => {
+const SavedMediaModal = ({ isVisible, onClose, loadId = null, loadTitle = null, loadNumber = null }) => {
   const [savedMedia, setSavedMedia] = useState([]);
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   
   // Create video player only when we have a video selected
   const player = useVideoPlayer(
-    selectedMedia?.type === 'video' ? selectedMedia.uri : null,
+    selectedMedia?.type === 'video' ? (selectedMedia.signedUrl || selectedMedia.uri) : null,
     (player) => {
       if (selectedMedia?.type === 'video') {
         player.loop = true;
@@ -38,7 +38,7 @@ const SavedMediaModal = ({ isVisible, onClose }) => {
     if (isVisible) {
       loadSavedMedia();
     }
-  }, [isVisible]);
+  }, [isVisible, loadId, loadNumber]);
 
   // Cleanup video player when modal closes or media changes
   useEffect(() => {
@@ -50,70 +50,52 @@ const SavedMediaModal = ({ isVisible, onClose }) => {
   const loadSavedMedia = async () => {
     setIsLoading(true);
     try {
-      const mediaData = await AsyncStorage.getItem('secureMedia');
-      if (mediaData) {
-        const parsedMedia = JSON.parse(mediaData);
-        // Sort by timestamp, most recent first
-        const sortedMedia = parsedMedia.sort((a, b) => 
-          new Date(b.timestamp) - new Date(a.timestamp)
-        );
-        setSavedMedia(sortedMedia);
+      if (loadNumber) {
+        // Load media directly from S3 using loadNumber
+        console.log('Loading media from S3 for load number:', loadNumber);
+        const s3Result = await S3Service.listLoadMedia(loadNumber);
+        
+        if (s3Result.success) {
+          // Sort by step, then by timestamp
+          const sortedMedia = s3Result.media.sort((a, b) => {
+            if (a.step !== b.step) {
+              return (a.step || 0) - (b.step || 0);
+            }
+            return new Date(b.lastModified) - new Date(a.lastModified);
+          });
+          
+          // Transform S3 media objects to match expected format
+          const transformedMedia = sortedMedia.map(media => ({
+            id: media.key, // Use S3 key as unique ID
+            type: media.type,
+            step: media.step,
+            timestamp: media.lastModified,
+            fileName: media.fileName,
+            size: media.size,
+            loadNumber: media.loadNumber,
+            signedUrl: media.signedUrl,
+            s3Key: media.key,
+            uri: media.signedUrl, // For compatibility with existing video player code
+          }));
+          
+          setSavedMedia(transformedMedia);
+          console.log('Loaded media from S3:', transformedMedia.length, 'items');
+        } else {
+          console.error('Failed to load media from S3:', s3Result.error);
+          setSavedMedia([]);
+        }
       } else {
+        // No loadNumber provided - cannot fetch media
+        console.log('No loadNumber provided - cannot fetch media from S3');
         setSavedMedia([]);
       }
     } catch (error) {
       console.error('Error loading saved media:', error);
       Alert.alert('Error', 'Failed to load saved media');
+      setSavedMedia([]);
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const deleteMedia = async (mediaId) => {
-    Alert.alert(
-      'Delete Media',
-      'Are you sure you want to delete this media? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const updatedMedia = savedMedia.filter(item => item.id !== mediaId);
-              await AsyncStorage.setItem('secureMedia', JSON.stringify(updatedMedia));
-              setSavedMedia(updatedMedia);
-              setSelectedMedia(null);
-            } catch (error) {
-              Alert.alert('Error', 'Failed to delete media');
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const clearAllMedia = async () => {
-    Alert.alert(
-      'Clear All Media',
-      'Are you sure you want to delete all saved media? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear All',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await AsyncStorage.removeItem('secureMedia');
-              setSavedMedia([]);
-              setSelectedMedia(null);
-            } catch (error) {
-              Alert.alert('Error', 'Failed to clear media');
-            }
-          },
-        },
-      ]
-    );
   };
 
   const formatDate = (timestamp) => {
@@ -121,42 +103,47 @@ const SavedMediaModal = ({ isVisible, onClose }) => {
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
   };
 
-  const renderMediaItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.mediaItem}
-      onPress={() => setSelectedMedia(item)}
-      activeOpacity={0.8}
-    >
-      <View style={styles.mediaContainer}>
-        {item.type === 'photo' ? (
-          <Image source={{ uri: item.uri }} style={styles.mediaThumbnail} />
-        ) : (
-          <View style={styles.videoContainer}>
-            <View style={styles.videoThumbnail}>
-              <Ionicons name="videocam" size={40} color="#667eea" />
+  const renderMediaItem = ({ item }) => {
+    // Use signedUrl for S3 media, fallback to uri for local media
+    const mediaUri = item.signedUrl || item.uri;
+    
+    return (
+      <TouchableOpacity
+        style={styles.mediaItem}
+        onPress={() => setSelectedMedia(item)}
+        activeOpacity={0.8}
+      >
+        <View style={styles.mediaContainer}>
+          {item.type === 'photo' ? (
+            <Image source={{ uri: mediaUri }} style={styles.mediaThumbnail} />
+          ) : (
+            <View style={styles.videoContainer}>
+              <View style={styles.videoThumbnail}>
+                <Ionicons name="videocam" size={40} color="#667eea" />
+              </View>
+              <View style={styles.videoOverlay}>
+                <Ionicons name="play-circle" size={40} color="#fff" />
+              </View>
             </View>
-            <View style={styles.videoOverlay}>
-              <Ionicons name="play-circle" size={40} color="#fff" />
+          )}
+          
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.8)']}
+            style={styles.mediaOverlay}
+          >
+            <View style={styles.mediaInfo}>
+              <Ionicons 
+                name={item.type === 'photo' ? 'camera' : 'videocam'} 
+                size={16} 
+                color="#fff" 
+              />
+              <Text style={styles.stepText}>Step {item.step}</Text>
             </View>
-          </View>
-        )}
-        
-        <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.8)']}
-          style={styles.mediaOverlay}
-        >
-          <View style={styles.mediaInfo}>
-            <Ionicons 
-              name={item.type === 'photo' ? 'camera' : 'videocam'} 
-              size={16} 
-              color="#fff" 
-            />
-            <Text style={styles.stepText}>Step {item.step}</Text>
-          </View>
-        </LinearGradient>
-      </View>
-    </TouchableOpacity>
-  );
+          </LinearGradient>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   const renderSelectedMedia = () => {
     if (!selectedMedia) return null;
@@ -185,18 +172,14 @@ const SavedMediaModal = ({ isVisible, onClose }) => {
               </Text>
             </View>
 
-            <TouchableOpacity
-              style={styles.deleteButton}
-              onPress={() => deleteMedia(selectedMedia.id)}
-            >
-              <Ionicons name="trash" size={24} color="#ff4757" />
-            </TouchableOpacity>
+            {/* Empty view to maintain header layout balance */}
+            <View style={styles.closeButton} />
           </View>
 
           <View style={styles.fullScreenContent}>
             {selectedMedia.type === 'photo' ? (
               <Image
-                source={{ uri: selectedMedia.uri }}
+                source={{ uri: selectedMedia.signedUrl || selectedMedia.uri }}
                 style={styles.fullScreenMedia}
                 resizeMode="contain"
               />
@@ -232,7 +215,9 @@ const SavedMediaModal = ({ isVisible, onClose }) => {
             <View style={styles.headerRow}>
               <View style={styles.headerLeft}>
                 <Ionicons name="folder-open" size={24} color="#fff" />
-                <Text style={styles.title}>Saved Media</Text>
+                <Text style={styles.title}>
+                  {loadTitle ? `${loadTitle} Media` : 'Saved Media'}
+                </Text>
               </View>
               
               <TouchableOpacity onPress={onClose} style={styles.headerCloseButton}>
@@ -241,7 +226,10 @@ const SavedMediaModal = ({ isVisible, onClose }) => {
             </View>
             
             <Text style={styles.subtitle}>
-              {savedMedia.length} {savedMedia.length === 1 ? 'item' : 'items'} stored securely
+              {loadTitle 
+                ? `${savedMedia.length} ${savedMedia.length === 1 ? 'item' : 'items'} from this load`
+                : `${savedMedia.length} ${savedMedia.length === 1 ? 'item' : 'items'} stored securely`
+              }
             </Text>
           </LinearGradient>
 
@@ -256,7 +244,10 @@ const SavedMediaModal = ({ isVisible, onClose }) => {
                 <Ionicons name="camera-outline" size={80} color="#ccc" />
                 <Text style={styles.emptyTitle}>No Media Found</Text>
                 <Text style={styles.emptyDescription}>
-                  Start capturing photos and videos to see them here
+                  {loadTitle 
+                    ? `No media has been captured for ${loadTitle} yet`
+                    : 'Start capturing photos and videos to see them here'
+                  }
                 </Text>
               </View>
             ) : (
@@ -271,17 +262,7 @@ const SavedMediaModal = ({ isVisible, onClose }) => {
             )}
           </View>
 
-          {savedMedia.length > 0 && (
-            <View style={styles.footer}>
-              <TouchableOpacity
-                style={styles.clearButton}
-                onPress={clearAllMedia}
-              >
-                <Ionicons name="trash-outline" size={20} color="#ff4757" />
-                <Text style={styles.clearButtonText}>Clear All</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+
         </View>
       </Modal>
 

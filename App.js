@@ -10,22 +10,53 @@ import { Buffer } from 'buffer';
 global.Buffer = Buffer;
 
 // Import our screens and components
-import { Dashboard, CaptureProcess } from './src/screens';
+import { Dashboard, CaptureProcess, LoginScreen } from './src/screens';
 import { SavedMediaModal } from './src/components';
+import { UserStorage } from './src/utils/userStorage';
 
 const Stack = createStackNavigator();
 
 // Main App Component
 const MainApp = () => {
-  const [showSavedMediaModal, setShowSavedMediaModal] = useState(false);
 
-  const handleViewSavedMedia = () => {
-    setShowSavedMediaModal(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState(null);
+
+  useEffect(() => {
+    checkAuthStatus();
+  }, []);
+
+  const checkAuthStatus = async () => {
+    try {
+      const user = await UserStorage.getCurrentUser();
+      if (user) {
+        setCurrentUser(user);
+        setIsLoggedIn(true);
+      }
+    } catch (error) {
+      console.error('Error checking auth status:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleCloseSavedMedia = () => {
-    setShowSavedMediaModal(false);
+  const handleLoginSuccess = (user) => {
+    setCurrentUser(user);
+    setIsLoggedIn(true);
   };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setIsLoggedIn(false);
+  };
+
+
+
+  // Show loading screen while checking auth status
+  if (isLoading) {
+    return null; // You could show a loading spinner here
+  }
 
   return (
     <>
@@ -50,42 +81,52 @@ const MainApp = () => {
             },
           }}
         >
-          <Stack.Screen name="Dashboard">
-            {(props) => (
-              <Dashboard
-                {...props}
-                onViewSavedMedia={handleViewSavedMedia}
-              />
-            )}
-          </Stack.Screen>
-          <Stack.Screen
-            name="CaptureProcess"
-            component={CaptureProcess}
-            options={{
-              cardStyleInterpolator: ({ current, layouts }) => {
-                return {
-                  cardStyle: {
-                    transform: [
-                      {
-                        translateY: current.progress.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [layouts.screen.height, 0],
-                        }),
+          {!isLoggedIn ? (
+            <Stack.Screen name="Login">
+              {(props) => (
+                <LoginScreen
+                  {...props}
+                  onLoginSuccess={handleLoginSuccess}
+                />
+              )}
+            </Stack.Screen>
+          ) : (
+            <>
+              <Stack.Screen name="Dashboard">
+                {(props) => (
+                  <Dashboard
+                    {...props}
+                    onLogout={handleLogout}
+                    currentUser={currentUser}
+                  />
+                )}
+              </Stack.Screen>
+              <Stack.Screen
+                name="CaptureProcess"
+                component={CaptureProcess}
+                options={{
+                  cardStyleInterpolator: ({ current, layouts }) => {
+                    return {
+                      cardStyle: {
+                        transform: [
+                          {
+                            translateY: current.progress.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [layouts.screen.height, 0],
+                            }),
+                          },
+                        ],
                       },
-                    ],
+                    };
                   },
-                };
-              },
-            }}
-          />
+                }}
+              />
+            </>
+          )}
         </Stack.Navigator>
       </NavigationContainer>
 
-      {/* Saved Media Modal */}
-      <SavedMediaModal
-        isVisible={showSavedMediaModal}
-        onClose={handleCloseSavedMedia}
-      />
+
     </>
   );
 };

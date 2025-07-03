@@ -1,83 +1,188 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
   TouchableOpacity, 
   StyleSheet, 
   SafeAreaView,
-  Dimensions 
+  Dimensions,
+  ScrollView,
+  Alert,
+  RefreshControl,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { UserStorage } from '../utils/userStorage';
+import LoadCard from '../components/LoadCard';
+import { SavedMediaModal } from '../components';
 
 const { width, height } = Dimensions.get('window');
 
-const Dashboard = ({ navigation, onViewSavedMedia }) => {
+const Dashboard = ({ navigation, onLogout }) => {
+  const [user, setUser] = useState(null);
+  const [loads, setLoads] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedLoad, setSelectedLoad] = useState(null);
+  const [showLoadMediaModal, setShowLoadMediaModal] = useState(false);
+  const [selectedLoadForMedia, setSelectedLoadForMedia] = useState(null);
+
+  useEffect(() => {
+    loadUserData();
+    loadUserLoads();
+  }, []);
+
+  const loadUserData = async () => {
+    try {
+      const userData = await UserStorage.getCurrentUser();
+      setUser(userData);
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    }
+  };
+
+  const loadUserLoads = async () => {
+    try {
+      const userLoads = await UserStorage.getUserLoads();
+      setLoads(userLoads);
+    } catch (error) {
+      console.error('Error loading user loads:', error);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([loadUserData(), loadUserLoads()]);
+    setRefreshing(false);
+  };
+
+  const handleLoadPress = (load) => {
+    setSelectedLoad(load);
+    navigation.navigate('CaptureProcess', { 
+      loadId: load.dbId || load.id, // Use database ID if available
+      loadTitle: load.title || load.loadNumber,
+      loadNumber: load.loadNumber,
+    });
+  };
+
+  const handleViewLoadMedia = (load) => {
+    setSelectedLoadForMedia(load);
+    setShowLoadMediaModal(true);
+  };
+
+  const handleCloseLoadMedia = () => {
+    setShowLoadMediaModal(false);
+    setSelectedLoadForMedia(null);
+  };
+
+
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            await UserStorage.clearUser();
+            // Call the parent logout handler
+            if (onLogout) {
+              onLogout();
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <LinearGradient
         colors={['#667eea', '#764ba2']}
         style={styles.gradient}
       >
-        <View style={styles.content}>
-          {/* Header Section */}
-          <View style={styles.header}>
-            <Ionicons name="shield-checkmark" size={50} color="#fff" />
-            <Text style={styles.title}>SecureCam</Text>
-            <Text style={styles.subtitle}>
-              Secure Media Capture & Storage
-            </Text>
-          </View>
-
-          {/* Description Section */}
-          <View style={styles.descriptionContainer}>
-            <Text style={styles.description}>
-              Capture and securely store your important moments with military-grade security.
-              Take photos and record videos with confidence.
-            </Text>
-            <View style={styles.featureList}>
-              <View style={styles.featureItem}>
-                <Ionicons name="camera" size={20} color="#fff" />
-                <Text style={styles.featureText}>High-Quality Photos</Text>
+        <ScrollView
+          style={styles.scrollView}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" />
+          }
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.content}>
+            {/* User Header Section */}
+            <View style={styles.userHeader}>
+              <View style={styles.userInfo}>
+                <Image 
+                  source={require('../../assets/icon.png')} 
+                  style={styles.logoIcon} 
+                />
+                <View style={styles.userTextContainer}>
+                  <Text style={styles.welcomeText}>Welcome back,</Text>
+                  <Text style={styles.userName}>{user?.name || 'User'}</Text>
+                  <Text style={styles.userPhone}>
+                    {user?.phoneNumber || user?.phone ? `Phone: ${user.phoneNumber || user.phone}` : `ID: ${user?.userId || 'N/A'}`}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.featureItem}>
-                <Ionicons name="videocam" size={20} color="#fff" />
-                <Text style={styles.featureText}>HD Video Recording</Text>
-              </View>
-              <View style={styles.featureItem}>
-                <Ionicons name="lock-closed" size={20} color="#fff" />
-                <Text style={styles.featureText}>Secure Storage</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Action Buttons */}
-          <View style={styles.actionContainer}>
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => navigation.navigate('CaptureProcess')}
-              activeOpacity={0.8}
-            >
-              <LinearGradient
-                colors={['#ff7b7b', '#ff4757']}
-                style={styles.buttonGradient}
+              <TouchableOpacity 
+                style={styles.logoutButton}
+                onPress={handleLogout}
               >
-                <Ionicons name="camera" size={24} color="#fff" />
-                <Text style={styles.buttonText}>Start Capture</Text>
-              </LinearGradient>
-            </TouchableOpacity>
+                <Ionicons name="log-out" size={20} color="#fff" />
+              </TouchableOpacity>
+            </View>
 
-            <TouchableOpacity
-              style={styles.secondaryButton}
-              onPress={onViewSavedMedia}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="folder-open" size={20} color="#667eea" />
-              <Text style={styles.secondaryButtonText}>View Saved Media</Text>
-            </TouchableOpacity>
+            {/* Loads Section */}
+            <View style={styles.loadsSection}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Your Loads</Text>
+                <Text style={styles.sectionSubtitle}>
+                  {loads.length} load{loads.length !== 1 ? 's' : ''} available
+                </Text>
+              </View>
+
+              {loads.length > 0 ? (
+                <View style={styles.loadsContainer}>
+                  {loads.map((load) => (
+                    <LoadCard
+                      key={load.id}
+                      load={load}
+                      userId={user?.userId}
+                      onPress={handleLoadPress}
+                      onViewMedia={handleViewLoadMedia}
+                    />
+                  ))}
+                </View>
+              ) : (
+                <View style={styles.emptyLoadsContainer}>
+                  <Ionicons name="folder-open" size={50} color="#ffffff50" />
+                  <Text style={styles.emptyLoadsText}>No loads available</Text>
+                  <Text style={styles.emptyLoadsSubtext}>
+                    Loads will appear here when assigned
+                  </Text>
+                </View>
+              )}
+            </View>
+
+
           </View>
-        </View>
+        </ScrollView>
       </LinearGradient>
+
+      {/* Load-specific Media Modal */}
+      <SavedMediaModal
+        isVisible={showLoadMediaModal}
+        onClose={handleCloseLoadMedia}
+        loadId={selectedLoadForMedia?.dbId || selectedLoadForMedia?.id}
+        loadTitle={selectedLoadForMedia?.loadNumber || selectedLoadForMedia?.title}
+        loadNumber={selectedLoadForMedia?.loadNumber}
+      />
     </SafeAreaView>
   );
 };
@@ -89,104 +194,102 @@ const styles = StyleSheet.create({
   gradient: {
     flex: 1,
   },
-  content: {
+  scrollView: {
     flex: 1,
+  },
+  content: {
     paddingHorizontal: 20,
-    justifyContent: 'space-between',
-    paddingTop: 40,
+    paddingTop: 20,
     paddingBottom: 40,
   },
-  header: {
+  userHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 30,
+    paddingVertical: 15,
   },
-  title: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginTop: 15,
-    letterSpacing: 1,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#ffffff80',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  descriptionContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  description: {
-    fontSize: 16,
-    color: '#fff',
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 30,
-    paddingHorizontal: 10,
-  },
-  featureList: {
-    alignItems: 'flex-start',
-  },
-  featureItem: {
+  userInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 15,
-    paddingHorizontal: 20,
+    flex: 1,
   },
-  featureText: {
-    color: '#fff',
-    fontSize: 16,
-    marginLeft: 12,
+  userTextContainer: {
+    marginLeft: 15,
+    flex: 1,
+  },
+  welcomeText: {
+    fontSize: 14,
+    color: '#ffffff80',
     fontWeight: '500',
   },
-  actionContainer: {
-    marginTop: 20,
-  },
-  primaryButton: {
-    marginBottom: 15,
-    borderRadius: 15,
-    overflow: 'hidden',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-  },
-  buttonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 30,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 18,
+  userName: {
+    fontSize: 24,
     fontWeight: 'bold',
-    marginLeft: 10,
+    color: '#fff',
+    marginTop: 2,
   },
-  secondaryButton: {
+  userPhone: {
+    fontSize: 12,
+    color: '#ffffff60',
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  logoutButton: {
     backgroundColor: '#ffffff20',
-    borderRadius: 15,
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 20,
+    padding: 10,
     borderWidth: 1,
     borderColor: '#ffffff30',
   },
-  secondaryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
+  logoIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    resizeMode: 'contain',
+    backgroundColor: '#ffffff',
   },
+  loadsSection: {
+    marginBottom: 30,
+  },
+  sectionHeader: {
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 5,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#ffffff70',
+    fontWeight: '500',
+  },
+  loadsContainer: {
+    marginTop: 10,
+  },
+  emptyLoadsContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    backgroundColor: '#ffffff10',
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#ffffff20',
+  },
+  emptyLoadsText: {
+    fontSize: 18,
+    color: '#ffffff70',
+    fontWeight: '600',
+    marginTop: 15,
+  },
+  emptyLoadsSubtext: {
+    fontSize: 14,
+    color: '#ffffff50',
+    marginTop: 5,
+    textAlign: 'center',
+  },
+
 });
 
 export default Dashboard; 

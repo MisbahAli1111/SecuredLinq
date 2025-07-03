@@ -15,7 +15,9 @@ import { CameraView, CameraType, useCameraPermissions, useMicrophonePermissions 
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
-import { S3Service } from '../services';
+import { S3Service, SampleDataService } from '../services';
+import { UserStorage } from '../utils/userStorage';
+import { StorageUtils } from '../utils/storage';
 
 const { width, height } = Dimensions.get('window');
 
@@ -25,7 +27,7 @@ const STEPS = [
   { id: 3, title: 'Security Video', description: 'Record a 20-second security video', type: 'video' },
 ];
 
-const CaptureProcess = ({ navigation }) => {
+const CaptureProcess = ({ navigation, route }) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -36,12 +38,15 @@ const CaptureProcess = ({ navigation }) => {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [microphonePermission, requestMicrophonePermission] = useMicrophonePermissions();
   
+  // Load information from route params
+  const loadId = route?.params?.loadId;
+  const loadTitle = route?.params?.loadTitle;
+  const loadNumber = route?.params?.loadNumber;
+  
   const cameraRef = useRef(null);
   const recordingTimer = useRef(null);
   const progressAnimation = useRef(new Animated.Value(0)).current;
   const pulseAnimation = useRef(new Animated.Value(1)).current;
-
-
 
   // Check if all required permissions are granted
   const hasAllPermissions = () => {
@@ -230,12 +235,36 @@ const CaptureProcess = ({ navigation }) => {
 
   const saveMediaToStorage = async (media) => {
     try {
-      const existingMedia = await AsyncStorage.getItem('secureMedia');
-      const mediaArray = existingMedia ? JSON.parse(existingMedia) : [];
-      mediaArray.push(media);
-      await AsyncStorage.setItem('secureMedia', JSON.stringify(mediaArray));
+      const mediaWithLoad = {
+        ...media,
+        loadId: loadId, // Associate media with the current load
+        loadTitle: loadTitle,
+      };
+      
+      // Save to local storage (original functionality)
+      const success = await StorageUtils.saveMedia(mediaWithLoad);
+      console.log('Media saved to storage:', success);
+      
+      // Also save reference to database-like structure for future database integration
+      try {
+        if (loadId) {
+          const mediaData = {
+            loadId: loadId,
+            imageUrl: media.type === 'photo' ? media.uri : null,
+            videoUrl: media.type === 'video' ? media.uri : null,
+          };
+          await UserStorage.saveMediaToDatabase(mediaData);
+          console.log('Media reference saved to database structure');
+        }
+      } catch (dbError) {
+        console.error('Error saving media reference to database:', dbError);
+        // Don't fail the whole operation if database save fails
+      }
+      
+      return success;
     } catch (error) {
-      console.error('Error saving to storage:', error);
+      console.error('Error saving media to storage:', error);
+      return false;
     }
   };
 
@@ -250,9 +279,14 @@ const CaptureProcess = ({ navigation }) => {
         throw new Error(`S3 Configuration Error: ${configCheck.error}`);
       }
 
-      // Upload all media files to S3
+      // Get loadNumber from route params or generate one
+      const loadNumberToUse = loadNumber || `LOAD_${Date.now()}`;
+      console.log('Uploading to S3 for load:', loadNumberToUse);
+
+      // Upload all media files to S3 with load-based folder structure
       const uploadResult = await S3Service.uploadMediaBatch(
         mediaItems,
+        loadNumberToUse,
         (progress, completed, total) => {
           setUploadProgress(progress);
           console.log(`Upload Progress: ${progress}% (${completed}/${total} files)`);
@@ -260,33 +294,27 @@ const CaptureProcess = ({ navigation }) => {
       );
 
       if (uploadResult.success) {
-        // Update local storage with S3 information
-        const updatedMediaItems = mediaItems.map((media, index) => ({
-          ...media,
-          s3Location: uploadResult.uploads[index].location,
-          s3Key: uploadResult.uploads[index].key,
-          uploadedAt: new Date().toISOString(),
-        }));
-
-        // Save updated media info to AsyncStorage
-        const existingMedia = await AsyncStorage.getItem('secureMedia');
-        const allMedia = existingMedia ? JSON.parse(existingMedia) : [];
-        
-        // Replace the uploaded items with updated versions
-        updatedMediaItems.forEach(updatedMedia => {
-          const index = allMedia.findIndex(item => item.id === updatedMedia.id);
-          if (index !== -1) {
-            allMedia[index] = updatedMedia;
-          }
-        });
-
-        await AsyncStorage.setItem('secureMedia', JSON.stringify(allMedia));
-
-        return {
-          success: true,
-          uploadedFiles: uploadResult.totalFiles,
-          locations: uploadResult.uploads.map(upload => upload.location),
-        };
+        // Save media URLs to database instead of AsyncStorage
+        try {
+          const savedMedia = await SampleDataService.saveMediaFromS3Upload(loadId, uploadResult.uploads);
+          console.log('Saved media URLs to database:', savedMedia.length, 'items');
+          
+          return {
+            success: true,
+            uploadedFiles: uploadResult.totalFiles,
+            locations: uploadResult.uploads.map(upload => upload.location),
+            savedMedia: savedMedia,
+          };
+        } catch (dbError) {
+          console.error('Error saving to database:', dbError);
+          // Still return success since S3 upload worked
+          return {
+            success: true,
+            uploadedFiles: uploadResult.totalFiles,
+            locations: uploadResult.uploads.map(upload => upload.location),
+            dbError: dbError.message,
+          };
+        }
       }
     } catch (error) {
       console.error('S3 Upload Error:', error);
@@ -305,10 +333,20 @@ const CaptureProcess = ({ navigation }) => {
       console.log('Complete Process - Media to upload:', mediaToUpload.length, 'items');
       console.log('Media details:', mediaToUpload.map(m => ({ type: m.type, step: m.step, uri: m.uri.substring(m.uri.lastIndexOf('/') + 1) })));
 
+      // Update load media count if we have a loadId
+      if (loadId && mediaToUpload.length > 0) {
+        try {
+          await UserStorage.updateLoadMediaCount(loadId, mediaToUpload.length);
+          console.log('Updated load media count for load:', loadId);
+        } catch (error) {
+          console.error('Error updating load media count:', error);
+        }
+      }
+
       // Show upload progress dialog
       Alert.alert(
         'Uploading to Cloud',
-        'Your media is being securely uploaded to the cloud. Please wait...',
+        `Uploading ${mediaToUpload.length} media files from ${loadTitle || 'your load'} to secure cloud storage...`,
         [],
         { cancelable: false }
       );
@@ -321,14 +359,10 @@ const CaptureProcess = ({ navigation }) => {
           // Partial success
           Alert.alert(
             'Partially Successful',
-            `${uploadResult.successfulUploads} of ${uploadResult.totalFiles} files uploaded successfully.\n\n${uploadResult.failedUploads} files failed to upload (likely due to large file size). Media has been saved locally.`,
+            `${uploadResult.successfulUploads} of ${uploadResult.totalFiles} files uploaded successfully from ${loadTitle || 'your load'}.\n\n${uploadResult.failedUploads} files failed to upload (likely due to large file size). Media has been saved locally.`,
             [
               {
-                text: 'View Media',
-                onPress: () => navigation.replace('Dashboard', { showSavedMedia: true }),
-              },
-              {
-                text: 'Back to Dashboard',
+                text: 'OK',
                 onPress: () => navigation.goBack(),
               },
             ]
@@ -337,14 +371,10 @@ const CaptureProcess = ({ navigation }) => {
           // Complete success
           Alert.alert(
             'Success!',
-            `All media has been captured and securely uploaded to the cloud!\n\n${uploadResult.successfulUploads} files uploaded successfully.`,
+            `All media from ${loadTitle || 'your load'} has been captured and securely uploaded to the cloud!\n\n${uploadResult.successfulUploads} files uploaded successfully.`,
             [
               {
-                text: 'View Media',
-                onPress: () => navigation.replace('Dashboard', { showSavedMedia: true }),
-              },
-              {
-                text: 'Back to Dashboard',
+                text: 'OK',
                 onPress: () => navigation.goBack(),
               },
             ]
@@ -355,14 +385,10 @@ const CaptureProcess = ({ navigation }) => {
       // If upload fails, still save locally and inform user
       Alert.alert(
         'Upload Failed',
-        `Media has been saved locally, but cloud upload failed: ${error.message}\n\nYou can try uploading again later.`,
+        `Media from ${loadTitle || 'your load'} has been saved locally, but cloud upload failed: ${error.message}\n\nYou can try uploading again later.`,
         [
           {
-            text: 'View Media',
-            onPress: () => navigation.replace('Dashboard', { showSavedMedia: true }),
-          },
-          {
-            text: 'Back to Dashboard',
+            text: 'OK',
             onPress: () => navigation.goBack(),
           },
         ]
@@ -430,6 +456,9 @@ const CaptureProcess = ({ navigation }) => {
         </TouchableOpacity>
         
         <View style={styles.headerContent}>
+          {loadTitle && (
+            <Text style={styles.loadTitle}>{loadTitle}</Text>
+          )}
           <Text style={styles.stepTitle}>{currentStepData.title}</Text>
           <Text style={styles.stepDescription}>{currentStepData.description}</Text>
           {needsMicPermission && (
@@ -591,6 +620,11 @@ const styles = StyleSheet.create({
   headerContent: {
     flex: 1,
     marginLeft: 15,
+  },
+  loadTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   stepTitle: {
     color: '#fff',

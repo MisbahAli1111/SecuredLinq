@@ -202,21 +202,25 @@ class S3Service {
   /**
    * Upload multiple media files (photos and videos) with better error handling
    * @param {Array} mediaItems - Array of media objects with uri, type, etc.
+   * @param {string} loadNumber - Load number for folder organization
    * @param {function} onProgressUpdate - Progress callback for all uploads
    * @returns {Promise} Array of upload results
    */
-  static async uploadMediaBatch(mediaItems, onProgressUpdate = null) {
+  static async uploadMediaBatch(mediaItems, loadNumber, onProgressUpdate = null) {
     const results = [];
     const errors = [];
     let completedUploads = 0;
 
-    console.log(`Starting batch upload of ${mediaItems.length} files`);
+    console.log(`Starting batch upload of ${mediaItems.length} files for load: ${loadNumber}`);
 
     // Process uploads sequentially to avoid memory issues
     for (let i = 0; i < mediaItems.length; i++) {
       const media = mediaItems[i];
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const fileName = `securecam/${timestamp}-step${media.step}-${media.type}.${media.type === 'photo' ? 'jpg' : 'mp4'}`;
+      
+      // New folder structure: loads/{loadNumber}/ - all media files directly in load folder
+      const fileExtension = media.type === 'photo' ? 'jpg' : 'mp4';
+      const fileName = `loads/${loadNumber}/${timestamp}-step${media.step}-${media.type}.${fileExtension}`;
       const contentType = media.type === 'photo' ? 'image/jpeg' : 'video/mp4';
 
       try {
@@ -242,6 +246,7 @@ class S3Service {
         results.push({
           ...result,
           originalMedia: media,
+          loadNumber: loadNumber,
         });
 
         console.log(`Successfully uploaded ${fileName}`);
@@ -277,6 +282,113 @@ class S3Service {
     } else {
       // All uploads failed
       throw new Error(`All uploads failed. Errors: ${errors.map(e => e.error).join(', ')}`);
+    }
+  }
+
+  /**
+   * List all media files for a specific load
+   * @param {string} loadNumber - Load number to list media for
+   * @returns {Promise} Array of media objects
+   */
+  static async listLoadMedia(loadNumber) {
+    try {
+      console.log(`Listing media for load: ${loadNumber}`);
+      
+      // Get all media files directly from the load folder
+      const listParams = {
+        Bucket: bucketName,
+        Prefix: `loads/${loadNumber}/`,
+      };
+
+      const result = await s3.listObjectsV2(listParams).promise();
+      
+      const mediaObjects = result.Contents.map(object => {
+        const key = object.Key;
+        const fileName = key.split('/').pop();
+        
+        // Extract info from filename (timestamp-step{X}-{type}.{ext})
+        const stepMatch = fileName.match(/step(\d+)/);
+        const typeMatch = fileName.match(/(photo|video)/);
+        
+        // Determine type from filename or file extension
+        let mediaType = typeMatch ? typeMatch[1] : 'unknown';
+        if (mediaType === 'unknown') {
+          if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || fileName.endsWith('.png')) {
+            mediaType = 'photo';
+          } else if (fileName.endsWith('.mp4') || fileName.endsWith('.mov') || fileName.endsWith('.avi')) {
+            mediaType = 'video';
+          }
+        }
+        
+        return {
+          key: key,
+          fileName: fileName,
+          size: object.Size,
+          lastModified: object.LastModified,
+          step: stepMatch ? parseInt(stepMatch[1]) : null,
+          type: mediaType,
+          loadNumber: loadNumber,
+          signedUrl: this.getSignedUrl(key, 3600), // 1 hour expiry
+        };
+      });
+
+      console.log(`Found ${mediaObjects.length} media files for load ${loadNumber}`);
+      return {
+        success: true,
+        media: mediaObjects,
+        loadNumber: loadNumber,
+      };
+    } catch (error) {
+      console.error('Error listing load media:', error);
+      return {
+        success: false,
+        error: error.message,
+        media: [],
+      };
+    }
+  }
+
+  /**
+   * Delete all media for a specific load
+   * @param {string} loadNumber - Load number to delete media for
+   * @returns {Promise} Delete result
+   */
+  static async deleteLoadMedia(loadNumber) {
+    try {
+      // List all objects directly in the load folder
+      const listParams = {
+        Bucket: bucketName,
+        Prefix: `loads/${loadNumber}/`,
+      };
+
+      const listResult = await s3.listObjectsV2(listParams).promise();
+      
+      if (listResult.Contents.length === 0) {
+        return {
+          success: true,
+          message: 'No media found to delete',
+          deletedCount: 0,
+        };
+      }
+
+      // Delete all objects
+      const deleteParams = {
+        Bucket: bucketName,
+        Delete: {
+          Objects: listResult.Contents.map(object => ({ Key: object.Key })),
+        },
+      };
+
+      const deleteResult = await s3.deleteObjects(deleteParams).promise();
+      
+      return {
+        success: true,
+        deletedCount: deleteResult.Deleted.length,
+        errors: deleteResult.Errors || [],
+      };
+    } catch (error) {
+      console.error('Error deleting load media:', error);
+      throw error;
     }
   }
 

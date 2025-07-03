@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "SecureCam",
+    "name": "SecureLinQ",
     "slug": "SecureCam",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -16,9 +16,10 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.org.securedlinq",
       "infoPlist": {
-        "NSCameraUsageDescription": "SecureCam needs access to your camera to take photos and record videos.",
-        "NSMicrophoneUsageDescription": "SecureCam needs access to your microphone to record videos with audio.",
-        "NSPhotoLibraryUsageDescription": "SecureCam needs access to your photo library to save captured media."
+        "NSCameraUsageDescription": "SecureLinQ needs access to your camera to take photos and record videos.",
+        "NSMicrophoneUsageDescription": "SecureLinQ needs access to your microphone to record videos with audio.",
+        "NSPhotoLibraryUsageDescription": "SecureLinQ needs access to your photo library to save captured media.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -48,20 +49,20 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow SecureCam to access your camera to take photos and record videos."
+          "cameraPermission": "Allow SecureLinQ to access your camera to take photos and record videos."
         }
       ],
       [
         "expo-av",
         {
-          "microphonePermission": "Allow SecureCam to access your microphone to record videos with audio."
+          "microphonePermission": "Allow SecureLinQ to access your microphone to record videos with audio."
         }
       ],
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow SecureCam to access your photos to save captured media.",
-          "savePhotosPermission": "Allow SecureCam to save photos and videos to your device.",
+          "photosPermission": "Allow SecureLinQ to access your photos to save captured media.",
+          "savePhotosPermission": "Allow SecureLinQ to save photos and videos to your device.",
           "isAccessMediaLocationEnabled": true
         }
       ]
