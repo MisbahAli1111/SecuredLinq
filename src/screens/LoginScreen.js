@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { UserService } from '../services/userService';
 import { UserStorage } from '../utils/userStorage';
 
 const LoginScreen = ({ onLoginSuccess }) => {
@@ -23,25 +24,15 @@ const LoginScreen = ({ onLoginSuccess }) => {
   const [isLoading, setIsLoading] = useState(false);
 
   const validateInputs = () => {
-    if (!name.trim()) {
-      Alert.alert('Error', 'Please enter your name');
-      return false;
-    }
+    const userData = {
+      name: name.trim(),
+      phoneNumber: phoneNumber.replace(/\s/g, ''),
+    };
 
-    if (!phoneNumber.trim()) {
-      Alert.alert('Error', 'Please enter your phone number');
-      return false;
-    }
-
-    // Pakistani phone number validation (11 digits starting with 03)
-    const cleanPhone = phoneNumber.replace(/\s/g, '');
-    if (cleanPhone.length !== 11) {
-      Alert.alert('Error', 'Please enter a valid 11-digit phone number');
-      return false;
-    }
-
-    if (!cleanPhone.startsWith('03')) {
-      Alert.alert('Error', 'Phone number must start with 03');
+    const validation = UserService.validateUserData(userData);
+    
+    if (!validation.isValid) {
+      Alert.alert('Error', validation.errors.join('\n'));
       return false;
     }
 
@@ -60,24 +51,32 @@ const LoginScreen = ({ onLoginSuccess }) => {
         phoneNumber: phoneNumber.replace(/\s/g, ''), // Remove spaces
       };
 
-      const savedUser = await UserStorage.saveUser(userData);
+      const result = await UserService.signupUser(userData);
       
-      // Note: Loads are now fetched from sample database service
-      // Default loads will be created automatically if user has no loads
-      
-      Alert.alert(
-        'Welcome!',
-        `Hello ${savedUser.name}! Your account has been created successfully.`,
-        [
-          {
-            text: 'Continue',
-            onPress: () => onLoginSuccess(savedUser),
-          },
-        ]
-      );
+      if (result.success) {
+        // Save user data to local storage
+        const savedUser = await UserStorage.saveUser(result.user);
+        
+        const welcomeMessage = result.isNewUser 
+          ? `Hello ${result.user.name}! Welcome to SecureLinQ. Your account has been created successfully.`
+          : `Hello ${result.user.name}! Welcome back to SecureLinQ.`;
+        
+        Alert.alert(
+          'Welcome!',
+          welcomeMessage,
+          [
+            {
+              text: 'Continue',
+              onPress: () => onLoginSuccess(savedUser),
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Error', 'Failed to authenticate. Please try again.');
+      }
     } catch (error) {
       console.error('Login error:', error);
-      Alert.alert('Error', 'Failed to create account. Please try again.');
+      Alert.alert('Error', error.message || 'Failed to authenticate. Please try again.');
     } finally {
       setIsLoading(false);
     }

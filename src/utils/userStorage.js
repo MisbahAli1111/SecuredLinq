@@ -1,32 +1,21 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SampleDataService } from '../services/sampleDataService';
+import { LoadsService } from '../services/loadsService';
 
 const USER_KEY = 'currentUser';
 const LOADS_KEY = 'userLoads';
 
 export const UserStorage = {
-  // Save user credentials (phone number and name)
-  async saveUser(userData) {
+  // Save user credentials from API response
+  async saveUser(apiUserData) {
     try {
-      // First check if user exists in our sample data
-      let existingUser = await SampleDataService.getUserByPhone(userData.phoneNumber);
-      
-      if (!existingUser) {
-        // Create new user in sample data
-        existingUser = await SampleDataService.createUser({
-          name: userData.name,
-          phone: userData.phoneNumber,
-        });
-      }
-
-      // Map database structure to local storage format
+      // Map API response to local storage format
       const userWithId = {
-        ...userData,
-        userId: existingUser.ID, // Use database ID
-        dbUserId: existingUser.ID, // Store database ID separately
-        name: existingUser.name,
-        phoneNumber: existingUser.phone,
-        createdAt: existingUser.created_at,
+        userId: apiUserData.ID, // Use API user ID
+        dbUserId: apiUserData.ID, // Store database ID separately
+        name: apiUserData.name,
+        phoneNumber: apiUserData.phoneNumber,
+        createdAt: apiUserData.created_at || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       
@@ -105,7 +94,7 @@ export const UserStorage = {
     }
   },
 
-  // Get loads for current user from sample data
+  // Get loads for current user from API
   async getUserLoads() {
     try {
       const currentUser = await this.getCurrentUser();
@@ -113,23 +102,17 @@ export const UserStorage = {
         return [];
       }
 
-      // Get loads from sample data service
-      const loads = await SampleDataService.getLoadsWithMediaCount(currentUser.dbUserId);
+      // Get loads from API service
+      const loads = await LoadsService.fetchLoadsByUserId(currentUser.dbUserId);
       
-      // Transform database structure to UI-friendly format
+      // Transform to UI-friendly format (LoadsService already does most of this)
       return loads.map(load => ({
-        id: load.ID,
-        dbId: load.ID,
-        title: load.loadNumber,
+        ...load,
         description: `Load ${load.loadNumber}`,
-        status: 'active',
-        createdAt: load.created_at,
-        mediaCount: load.mediaCount || 0,
-        userId: load.userId,
-        loadNumber: load.loadNumber,
       }));
     } catch (error) {
       console.error('Error getting user loads:', error);
+      // Return empty array on error to prevent app crash
       return [];
     }
   },
