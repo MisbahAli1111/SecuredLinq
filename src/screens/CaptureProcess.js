@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { S3Service, SampleDataService } from '../services';
+import { LoadsService } from '../services/loadsService';
 import { UserStorage } from '../utils/userStorage';
 import { StorageUtils } from '../utils/storage';
 
@@ -42,6 +43,8 @@ const CaptureProcess = ({ navigation, route }) => {
   const loadId = route?.params?.loadId;
   const loadTitle = route?.params?.loadTitle;
   const loadNumber = route?.params?.loadNumber;
+  const [loadData, setLoadData] = useState(null);
+  const [loadStatusChecked, setLoadStatusChecked] = useState(false);
   
   const cameraRef = useRef(null);
   const recordingTimer = useRef(null);
@@ -89,6 +92,40 @@ const CaptureProcess = ({ navigation, route }) => {
 
     return true;
   };
+
+  useEffect(() => {
+    // Check load status when component mounts
+    const checkLoadStatus = async () => {
+      if (loadId) {
+        try {
+          const load = await LoadsService.getLoadById(loadId);
+          setLoadData(load);
+          
+          // Check if load is completed
+          const isCompleted = load && (load.status === 'active' || (load.status && load.status.data && load.status.data[0] === 1));
+          
+          if (isCompleted) {
+            Alert.alert(
+              'Load Already Completed',
+              'This load has already been processed and cannot be modified.',
+              [
+                {
+                  text: 'OK',
+                  onPress: () => navigation.goBack(),
+                },
+              ]
+            );
+            return;
+          }
+        } catch (error) {
+          console.error('Error checking load status:', error);
+        }
+      }
+      setLoadStatusChecked(true);
+    };
+
+    checkLoadStatus();
+  }, [loadId, navigation]);
 
   useEffect(() => {
     // Animate progress bar
@@ -355,6 +392,17 @@ const CaptureProcess = ({ navigation, route }) => {
       const uploadResult = await uploadToS3(mediaToUpload);
 
       if (uploadResult.success) {
+        // Update load status after successful upload
+        try {
+          if (loadId) {
+            await LoadsService.updateLoadStatus(loadId);
+            console.log('Load status updated successfully for load:', loadId);
+          }
+        } catch (error) {
+          console.error('Error updating load status:', error);
+          // Don't fail the whole process if status update fails
+        }
+
         if (uploadResult.failedUploads && uploadResult.failedUploads > 0) {
           // Partial success
           Alert.alert(
@@ -416,10 +464,12 @@ const CaptureProcess = ({ navigation, route }) => {
     }
   };
 
-  if (!cameraPermission) {
+  if (!cameraPermission || !loadStatusChecked) {
     return (
       <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Requesting camera permissions...</Text>
+        <Text style={styles.loadingText}>
+          {!cameraPermission ? 'Requesting camera permissions...' : 'Checking load status...'}
+        </Text>
       </View>
     );
   }

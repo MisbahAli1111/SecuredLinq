@@ -70,6 +70,49 @@ export const LoadsService = {
   },
 
   /**
+   * Update load status after media upload
+   * @param {number} loadId - Load ID to update
+   * @returns {Promise} Promise resolving to update result
+   */
+  async updateLoadStatus(loadId) {
+    try {
+      const url = `http://3.94.63.165:3000/api/loads?id=${loadId}`;
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        timeout: API_CONFIG.TIMEOUT,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('Load status update result:', result);
+      
+      return result;
+    } catch (error) {
+      console.error('LoadsService.updateLoadStatus error:', error);
+      
+      // Handle network errors
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        throw new Error('Network error. Please check your internet connection.');
+      }
+      
+      // Handle timeout errors
+      if (error.name === 'AbortError') {
+        throw new Error('Request timeout. Please try again.');
+      }
+      
+      // Re-throw other errors
+      throw error;
+    }
+  },
+
+  /**
    * Parse load status from API response
    * @param {Object} status - Status object from API
    * @returns {string} Parsed status

@@ -57,6 +57,18 @@ const Dashboard = ({ navigation, onLogout }) => {
   };
 
   const handleLoadPress = (load) => {
+    // Check if load is completed (status = 1 means completed)
+    const isCompleted = load.status === 'active' || (load.status && load.status.data && load.status.data[0] === 1);
+    
+    if (isCompleted) {
+      Alert.alert(
+        'Load Completed',
+        'This load has already been processed and cannot be modified.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     setSelectedLoad(load);
     navigation.navigate('CaptureProcess', { 
       loadId: load.dbId || load.id, // Use database ID if available

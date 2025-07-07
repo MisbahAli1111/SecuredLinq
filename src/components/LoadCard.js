@@ -4,40 +4,59 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
 const LoadCard = ({ load, userId, onPress, onViewMedia }) => {
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  };
-
+  // Check if load is completed (status = 1 means completed)
+  const isCompleted = load.status === 'active' || (load.status && load.status.data && load.status.data[0] === 1);
+  
   // Use loadNumber if available, otherwise fall back to title
   const displayTitle = load.loadNumber || load.title;
-  const displaySubtitle = load.description || `Load ID: ${load.id}`;
+  const displaySubtitle = load.description || `User: ${load.userName || 'Unknown'}`;
+
+  const handlePress = () => {
+    if (isCompleted) {
+      // Show alert for completed loads
+      Alert.alert(
+        'Load Completed',
+        'This load has already been processed and cannot be modified.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    onPress(load);
+  };
+
+  const handleCapturePress = () => {
+    if (isCompleted) {
+      return; // Don't do anything for completed loads
+    }
+    onPress(load);
+  };
 
   return (
     <TouchableOpacity
-      style={styles.container}
-      onPress={() => onPress(load)}
-      activeOpacity={0.8}
+      style={[styles.container, isCompleted && styles.completedContainer]}
+      onPress={handlePress}
+      activeOpacity={isCompleted ? 1 : 0.8}
     >
       <LinearGradient
-        colors={['#ffffff20', '#ffffff10']}
+        colors={isCompleted ? ['#4CAF5020', '#4CAF5010'] : ['#ffffff20', '#ffffff10']}
         style={styles.gradient}
       >
         <View style={styles.content}>
           {/* Header Row */}
           <View style={styles.headerRow}>
             <View style={styles.titleContainer}>
-              <Text style={styles.title}>{displayTitle}</Text>
-              <Text style={styles.subtitle}>{displaySubtitle}</Text>
+              <Text style={[styles.title, isCompleted && styles.completedTitle]}>
+                {displayTitle}
+              </Text>
+              <Text style={[styles.subtitle, isCompleted && styles.completedSubtitle]}>
+                {displaySubtitle}
+              </Text>
             </View>
             <View style={styles.buttonContainer}>
               <TouchableOpacity 
@@ -47,10 +66,15 @@ const LoadCard = ({ load, userId, onPress, onViewMedia }) => {
                 <Ionicons name="images" size={18} color="#4CAF50" />
               </TouchableOpacity>
               <TouchableOpacity 
-                style={styles.captureButton}
-                onPress={() => onPress(load)}
+                style={[styles.captureButton, isCompleted && styles.disabledButton]}
+                onPress={handleCapturePress}
+                disabled={isCompleted}
               >
-                <Ionicons name="camera" size={18} color="#667eea" />
+                <Ionicons 
+                  name={isCompleted ? "checkmark-circle" : "camera"} 
+                  size={18} 
+                  color={isCompleted ? "#4CAF50" : "#667eea"} 
+                />
               </TouchableOpacity>
             </View>
           </View>
@@ -70,30 +94,27 @@ const LoadCard = ({ load, userId, onPress, onViewMedia }) => {
                   {load.mediaCount || 0} media
                 </Text>
               </View>
+              {/* Status indicator */}
               <View style={styles.statItem}>
-                <Ionicons name="calendar" size={16} color="#ffffff80" />
-                <Text style={styles.statText}>
-                  {formatDate(load.createdAt || load.created_at)}
+                <Ionicons 
+                  name={isCompleted ? 'checkmark-circle' : 'time'} 
+                  size={16} 
+                  color={isCompleted ? '#4CAF50' : '#FFA726'} 
+                />
+                <Text style={[styles.statText, { 
+                  color: isCompleted ? '#4CAF50' : '#FFA726' 
+                }]}>
+                  {isCompleted ? 'Completed' : 'Pending'}
                 </Text>
               </View>
-              {load.status && (
-                <View style={styles.statItem}>
-                  <Ionicons 
-                    name={load.status === 'active' ? 'checkmark-circle' : 'time'} 
-                    size={16} 
-                    color={load.status === 'active' ? '#4CAF50' : '#FFA726'} 
-                  />
-                  <Text style={[styles.statText, { 
-                    color: load.status === 'active' ? '#4CAF50' : '#FFA726' 
-                  }]}>
-                    {load.status}
-                  </Text>
-                </View>
-              )}
             </View>
             
             <View style={styles.actionIndicator}>
-              <Ionicons name="chevron-forward" size={16} color="#ffffff80" />
+              <Ionicons 
+                name={isCompleted ? "checkmark-circle" : "chevron-forward"} 
+                size={16} 
+                color={isCompleted ? "#4CAF50" : "#ffffff80"} 
+              />
             </View>
           </View>
         </View>
@@ -114,6 +135,9 @@ const styles = StyleSheet.create({
     },
     shadowOpacity: 0.1,
     shadowRadius: 3.84,
+  },
+  completedContainer: {
+    opacity: 0.8,
   },
   gradient: {
     borderWidth: 1,
@@ -153,11 +177,17 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginBottom: 4,
   },
+  completedTitle: {
+    color: '#4CAF50',
+  },
   subtitle: {
     fontSize: 14,
     color: '#ffffff80',
     fontWeight: '400',
-  },  
+  },
+  completedSubtitle: {
+    color: '#4CAF5080',
+  },
   captureButton: {
     backgroundColor: '#ffffff20',
     borderRadius: 18,
@@ -166,6 +196,10 @@ const styles = StyleSheet.create({
     borderColor: '#ffffff30',
     minWidth: 34,
     alignItems: 'center',
+  },
+  disabledButton: {
+    backgroundColor: '#4CAF5020',
+    borderColor: '#4CAF5030',
   },
   userRow: {
     flexDirection: 'row',
