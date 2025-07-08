@@ -1,6 +1,6 @@
 // API Configuration
 const API_CONFIG = {
-  BASE_URL: 'http://3.94.63.165:3000',
+  BASE_URL: 'https://videocall.securedlinq.com',
   ENDPOINTS: {
     USER_SIGNUP: '/api/user/signup',
     LOADS: '/api/loads',

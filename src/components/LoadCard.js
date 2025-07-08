@@ -71,9 +71,9 @@ const LoadCard = ({ load, userId, onPress, onViewMedia }) => {
                 disabled={isCompleted}
               >
                 <Ionicons 
-                  name={isCompleted ? "checkmark-circle" : "camera"} 
+                  name="camera" 
                   size={18} 
-                  color={isCompleted ? "#4CAF50" : "#667eea"} 
+                  color={isCompleted ? "#4CAF5060" : "#667eea"} 
                 />
               </TouchableOpacity>
             </View>
@@ -109,13 +109,15 @@ const LoadCard = ({ load, userId, onPress, onViewMedia }) => {
               </View>
             </View>
             
-            <View style={styles.actionIndicator}>
-              <Ionicons 
-                name={isCompleted ? "checkmark-circle" : "chevron-forward"} 
-                size={16} 
-                color={isCompleted ? "#4CAF50" : "#ffffff80"} 
-              />
-            </View>
+            {!isCompleted && (
+              <View style={styles.actionIndicator}>
+                <Ionicons 
+                  name="chevron-forward" 
+                  size={16} 
+                  color="#ffffff80" 
+                />
+              </View>
+            )}
           </View>
         </View>
       </LinearGradient>

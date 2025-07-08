@@ -72,17 +72,18 @@ export const LoadsService = {
   /**
    * Update load status after media upload
    * @param {number} loadId - Load ID to update
-   * @returns {Promise} Promise resolving to update result
+   * @returns {Promise} Promise resolving to updated loads array
    */
   async updateLoadStatus(loadId) {
     try {
-      const url = `http://3.94.63.165:3000/api/loads?id=${loadId}`;
+      const url = `https://videocall.securedlinq.com/api/loads?id=${loadId}`;
       
       const response = await fetch(url, {
-        method: 'POST',
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({"status": true}),
         timeout: API_CONFIG.TIMEOUT,
       });
 
@@ -93,7 +94,11 @@ export const LoadsService = {
       const result = await response.json();
       console.log('Load status update result:', result);
       
-      return result;
+      // Fetch updated loads to reflect the changes
+      const updatedLoads = await this.fetchLoads();
+      console.log('Loads fetched after status update');
+      
+      return updatedLoads;
     } catch (error) {
       console.error('LoadsService.updateLoadStatus error:', error);
       

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { UserStorage } from '../utils/userStorage';
 import LoadCard from '../components/LoadCard';
 import { SavedMediaModal } from '../components';
@@ -31,6 +32,13 @@ const Dashboard = ({ navigation, onLogout }) => {
     loadUserData();
     loadUserLoads();
   }, []);
+
+  // Reload loads when screen comes into focus (e.g., returning from CaptureProcess)
+  useFocusEffect(
+    React.useCallback(() => {
+      loadUserLoads();
+    }, [])
+  );
 
   const loadUserData = async () => {
     try {
